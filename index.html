@@ -1,0 +1,2559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>RED LIGHT, GREEN LIGHT</title>
+  <style>
+    /* -------------------------------------------------------------
+       CSS RESET & BASE ENVIRONMENT
+       ------------------------------------------------------------- */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #03060a;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* -------------------------------------------------------------
+       LETTERBOXED GAME WRAPPER (900x1400 Aspect Ratio)
+       ------------------------------------------------------------- */
+    #game-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 100vw;
+      max-height: 100vh;
+      background: #04070d;
+      box-shadow: 0 0 60px rgba(0, 0, 0, 0.95);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #game-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    /* Vignette & Cinematic Shadow Overlay */
+    .vignette-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 45%, transparent 45%, rgba(2, 4, 8, 0.6) 80%, rgba(1, 2, 4, 0.92) 100%);
+      z-index: 5;
+    }
+
+    /* Restrained Impact Flash (for movement-violation gunshot) */
+    #impact-flash {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      background: rgba(255, 230, 220, 0.7);
+      opacity: 0;
+      z-index: 6;
+      transition: opacity 0.08s ease-out;
+    }
+
+    /* -------------------------------------------------------------
+       HEADS UP DISPLAY (HUD)
+       ------------------------------------------------------------- */
+    #hud {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .hud-top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      background: rgba(8, 12, 20, 0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 8px 16px;
+      box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+    }
+
+    .hud-stat-box {
+      display: flex;
+      flex-direction: column;
+      min-width: 90px;
+    }
+
+    .hud-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #94a3b8;
+    }
+
+    .hud-val {
+      font-size: 20px;
+      font-weight: 800;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #f8fafc;
+      letter-spacing: -0.5px;
+    }
+
+    .time-val {
+      color: #38bdf8;
+    }
+    .time-warning {
+      color: #f59e0b;
+    }
+    .time-critical {
+      color: #ef4444;
+      animation: pulse-warn 0.6s infinite alternate;
+    }
+
+    @keyframes pulse-warn {
+      from { opacity: 0.8; }
+      to { opacity: 1; text-shadow: 0 0 12px rgba(239, 68, 68, 0.9); }
+    }
+
+    /* Traffic Light Module */
+    .traffic-module {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #050811;
+      padding: 6px 14px;
+      border-radius: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8);
+    }
+
+    .traffic-housing {
+      display: flex;
+      gap: 8px;
+      background: #111827;
+      padding: 4px 6px;
+      border-radius: 18px;
+      border: 1px solid #1f2937;
+    }
+
+    .traffic-lamp {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 900;
+      transition: all 0.15s ease-out;
+    }
+
+    .lamp-red {
+      background: #271418;
+      color: #551d24;
+      border: 1px solid #3f1920;
+      border-radius: 6px; /* Octagonal / squared feel for STOP */
+    }
+
+    .lamp-red.active {
+      background: #ef4444;
+      color: #ffffff;
+      border-color: #fca5a5;
+      box-shadow: 0 0 16px #ef4444, 0 0 32px rgba(239, 68, 68, 0.7);
+    }
+
+    .lamp-green {
+      background: #0f241a;
+      color: #1a4d34;
+      border: 1px solid #153826;
+    }
+
+    .lamp-green.active {
+      background: #10b981;
+      color: #ffffff;
+      border-color: #6ee7b7;
+      box-shadow: 0 0 16px #10b981, 0 0 32px rgba(16, 185, 129, 0.7);
+    }
+
+    .status-badge {
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      min-width: 90px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .status-go {
+      color: #34d399;
+      text-shadow: 0 0 10px rgba(52, 211, 153, 0.65);
+    }
+
+    .status-stop {
+      color: #f87171;
+      text-shadow: 0 0 10px rgba(248, 113, 113, 0.85);
+    }
+
+    .status-brake {
+      color: #fbbf24;
+      font-size: 13px;
+      text-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+    }
+
+    /* Progress Track */
+    .progress-container {
+      width: 100%;
+      background: rgba(8, 12, 20, 0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 6px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .progress-track {
+      position: relative;
+      width: 100%;
+      height: 8px;
+      background: #192233;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #0284c7, #38bdf8, #10b981);
+      border-radius: 4px;
+      transition: width 0.08s linear;
+    }
+
+    /* Speed Level Up Toast */
+    #speed-toast {
+      align-self: center;
+      background: rgba(14, 165, 233, 0.9);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      padding: 5px 14px;
+      border-radius: 14px;
+      opacity: 0;
+      transform: translateY(-6px);
+      transition: all 0.25s ease-out;
+      box-shadow: 0 4px 14px rgba(14, 165, 233, 0.5);
+    }
+
+    #speed-toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* -------------------------------------------------------------
+       OVERLAY SCREENS (START, WIN, LOSE)
+       ------------------------------------------------------------- */
+    .screen-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(4, 7, 13, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      z-index: 30;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease-out;
+    }
+
+    .screen-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .screen-card {
+      background: #090e18;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px;
+      padding: 34px 28px;
+      width: 100%;
+      max-width: 440px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 16px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85);
+    }
+
+    .screen-title {
+      font-size: 32px;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      line-height: 1.15;
+    }
+
+    .title-start {
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .title-win {
+      color: #34d399;
+      text-shadow: 0 0 24px rgba(52, 211, 153, 0.5);
+    }
+
+    .title-lose {
+      color: #f87171;
+      text-shadow: 0 0 24px rgba(248, 113, 113, 0.6);
+    }
+
+    .screen-subtitle {
+      font-size: 14px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+
+    .reason-box {
+      background: #1c0e12;
+      border: 1px solid #4a1d24;
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #fca5a5;
+      font-size: 14px;
+      font-weight: 700;
+      width: 100%;
+    }
+
+    .pill-info {
+      background: #162032;
+      color: #38bdf8;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      letter-spacing: 0.5px;
+    }
+
+    .stats-row {
+      display: flex;
+      gap: 14px;
+      width: 100%;
+      justify-content: center;
+      margin-top: 4px;
+    }
+
+    .stat-pill {
+      background: #162032;
+      padding: 8px 12px;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+    }
+
+    .stat-pill-label {
+      font-size: 10px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .stat-pill-val {
+      font-size: 18px;
+      color: #f8fafc;
+      font-weight: 800;
+      font-family: ui-monospace, monospace;
+    }
+
+    .instructions-box {
+      background: #070b12;
+      border: 1px solid #192438;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 13px;
+      color: #94a3b8;
+      line-height: 1.6;
+      width: 100%;
+      text-align: left;
+    }
+
+    .instructions-box strong {
+      color: #e2e8f0;
+    }
+
+    .space-hint {
+      font-size: 11px;
+      color: #64748b;
+      letter-spacing: 1px;
+      font-weight: 700;
+    }
+
+    .game-btn {
+      width: 100%;
+      padding: 14px 20px;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      color: #ffffff;
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      box-shadow: 0 4px 18px rgba(2, 132, 199, 0.4);
+      transition: all 0.15s ease-out;
+      outline: none;
+    }
+
+    .game-btn:hover {
+      background: linear-gradient(135deg, #0369a1, #075985);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 22px rgba(2, 132, 199, 0.6);
+    }
+
+    .game-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 10px rgba(2, 132, 199, 0.4);
+    }
+
+    .game-btn:focus-visible {
+      outline: 3px solid #38bdf8;
+      outline-offset: 3px;
+    }
+
+    .btn-green {
+      background: linear-gradient(135deg, #10b981, #059669);
+      box-shadow: 0 4px 18px rgba(16, 185, 129, 0.4);
+    }
+    .btn-green:hover {
+      background: linear-gradient(135deg, #059669, #047857);
+      box-shadow: 0 6px 22px rgba(16, 185, 129, 0.6);
+    }
+
+    /* -------------------------------------------------------------
+       ON-SCREEN RUN BUTTON (MOBILE / TOUCH & POINTER)
+       ------------------------------------------------------------- */
+    #touch-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 0;
+      width: 100%;
+      padding: 0 24px;
+      display: flex;
+      justify-content: center;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    .run-button {
+      pointer-events: auto;
+      width: 100%;
+      max-width: 380px;
+      height: 64px;
+      border-radius: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.18);
+      background: linear-gradient(180deg, #162032, #0c121d);
+      color: #f8fafc;
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+      transition: all 0.1s ease-out;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .run-button:focus-visible {
+      outline: 3px solid #38bdf8;
+      outline-offset: 2px;
+    }
+
+    .run-button.active, .run-button:active {
+      background: linear-gradient(180deg, #0284c7, #0369a1);
+      border-color: #38bdf8;
+      box-shadow: 0 0 28px rgba(2, 132, 199, 0.85), inset 0 2px 6px rgba(0, 0, 0, 0.4);
+      transform: scale(0.98);
+      color: #ffffff;
+    }
+
+    .run-icon {
+      font-size: 19px;
+    }
+
+    /* -------------------------------------------------------------
+       ACCESSIBILITY & PREFERS-REDUCED-MOTION
+       ------------------------------------------------------------- */
+    @media (prefers-reduced-motion: reduce) {
+      .time-critical {
+        animation: none;
+      }
+      .screen-overlay, #speed-toast, .run-button, .game-btn, #impact-flash {
+        transition: none;
+      }
+    }
+
+    @media (max-width: 480px) {
+      #hud {
+        padding: 8px 10px;
+        gap: 6px;
+      }
+      .hud-top-bar {
+        padding: 6px 10px;
+      }
+      .hud-val {
+        font-size: 17px;
+      }
+      .traffic-module {
+        padding: 4px 8px;
+        gap: 8px;
+      }
+      .traffic-lamp {
+        width: 20px;
+        height: 20px;
+        font-size: 9px;
+      }
+      .status-badge {
+        font-size: 13px;
+        min-width: 70px;
+      }
+      .screen-card {
+        padding: 24px 18px;
+        gap: 14px;
+      }
+      .screen-title {
+        font-size: 26px;
+      }
+      #touch-bar {
+        bottom: 16px;
+        padding: 0 16px;
+      }
+      .run-button {
+        height: 56px;
+        font-size: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-wrapper">
+    <canvas id="game-canvas"></canvas>
+    <div class="vignette-overlay"></div>
+    <div id="impact-flash"></div>
+
+    <!-- HUD -->
+    <div id="hud" aria-live="polite">
+      <div class="hud-top-bar">
+        <!-- Time Remaining -->
+        <div class="hud-stat-box">
+          <span class="hud-label">TIME</span>
+          <span id="hud-time" class="hud-val time-val">60.0s</span>
+        </div>
+
+        <!-- Traffic Light & Status Display -->
+        <div class="traffic-module">
+          <div class="traffic-housing">
+            <div id="lamp-red" class="traffic-lamp lamp-red" title="Stop">STOP</div>
+            <div id="lamp-green" class="traffic-lamp lamp-green" title="Go">GO</div>
+          </div>
+          <div id="status-text" class="status-badge status-go">READY</div>
+        </div>
+
+        <!-- Round & Speed Level -->
+        <div class="hud-stat-box" style="align-items: flex-end; text-align: right;">
+          <span class="hud-label">ROUND / LVL</span>
+          <span id="hud-round-lvl" class="hud-val">R1 / L1</span>
+        </div>
+      </div>
+
+      <!-- Distance Progress Bar -->
+      <div class="progress-container">
+        <div class="progress-meta">
+          <span>DISTANCE TO FINISH</span>
+          <span id="hud-dist-text">100m TO GO</span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+      </div>
+
+      <!-- Speed Up Toast -->
+      <div id="speed-toast">SPEED LEVEL INCREASED</div>
+    </div>
+
+    <!-- START SCREEN -->
+    <div id="screen-start" class="screen-overlay active">
+      <div class="screen-card">
+        <h1 class="screen-title title-start">RED LIGHT<br>GREEN LIGHT</h1>
+        <div class="pill-info">YOU HAVE 60 SECONDS</div>
+        <p class="screen-subtitle">Run across the 100-meter field to the distant finish line.<br>Brake and freeze completely before the guard turns.</p>
+        
+        <div class="instructions-box">
+          • <strong>GREEN LIGHT (GO):</strong> Hold W, Up Arrow, or the Run button.<br>
+          • <strong>RED LIGHT (STOP):</strong> Release to brake before grace expires.<br>
+          • Moving or holding run during RED judgment results in instant elimination.
+        </div>
+
+        <button id="btn-start" class="game-btn" type="button">START GAME</button>
+        <span class="space-hint">PRESS SPACE TO START</span>
+      </div>
+    </div>
+
+    <!-- WIN SCREEN -->
+    <div id="screen-win" class="screen-overlay">
+      <div class="screen-card">
+        <h1 class="screen-title title-win">YOU SURVIVED!</h1>
+        <div class="pill-info">FINISH LINE CONFIRMED</div>
+        <p class="screen-subtitle">You crossed the 100-meter mark and escaped the elimination trial.</p>
+
+        <div class="stats-row">
+          <div class="stat-pill">
+            <span class="stat-pill-label">COMPLETION TIME</span>
+            <span id="win-time-val" class="stat-pill-val">00.0s</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-pill-label">ROUNDS SURVIVED</span>
+            <span id="win-rounds-val" class="stat-pill-val">1</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-pill-label">FINAL LEVEL</span>
+            <span id="win-level-val" class="stat-pill-val">1</span>
+          </div>
+        </div>
+
+        <button id="btn-restart-win" class="game-btn btn-green" type="button">PLAY AGAIN</button>
+        <span class="space-hint">PRESS SPACE TO RESTART</span>
+      </div>
+    </div>
+
+    <!-- LOSE SCREEN -->
+    <div id="screen-lose" class="screen-overlay">
+      <div class="screen-card">
+        <h1 class="screen-title title-lose">ELIMINATED!</h1>
+        <div id="lose-reason" class="reason-box">You moved during RED LIGHT.</div>
+
+        <div class="stats-row">
+          <div class="stat-pill">
+            <span class="stat-pill-label">TIME SURVIVED</span>
+            <span id="lose-time-val" class="stat-pill-val">00.0s</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-pill-label">COURSE CLEARED</span>
+            <span id="lose-dist-val" class="stat-pill-val">0%</span>
+          </div>
+        </div>
+
+        <button id="btn-restart-lose" class="game-btn" type="button">TRY AGAIN</button>
+        <span class="space-hint">PRESS SPACE TO RESTART</span>
+      </div>
+    </div>
+
+    <!-- ON-SCREEN CONTROLS -->
+    <div id="touch-bar">
+      <button id="btn-run" class="run-button" type="button" aria-label="Hold to run">
+        <span class="run-icon">▲</span>
+        <span>HOLD TO RUN</span>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * RED LIGHT, GREEN LIGHT
+     * One self-contained, high-performance vanilla JS & Canvas game.
+     */
+    (() => {
+      'use strict';
+
+      /* -------------------------------------------------------------
+         1. TUNABLE NAMED CONSTANTS (Top of Script)
+         ------------------------------------------------------------- */
+      const COURSE_LENGTH_METERS = 100; // In-world representation: 100 meters
+      const START_Y = 1250;             // Player starting line (world-y)
+      const FINISH_Y = 300;             // Tiny distant finish line (world-y)
+      const PLAYER_ACCEL = 700;         // units / s^2
+      const MAX_SPEED = 260;            // units / s
+      const BRAKE_DECEL = 2000;         // units / s^2 (applied when no input is held)
+      const SAFE_SPEED = 6;             // units / s (maximum allowed speed to survive)
+      const GUARD_TURN_TIME = 0.35;     // seconds
+      const JUDGMENT_WINDOW = 0.60;     // seconds
+      const GRACE_FIRST = 0.55;         // seconds (round 1 grace)
+      const GRACE_MIN = 0.30;           // seconds (minimum grace floor)
+      const GAME_TIME = 60.0;           // seconds
+      const TURN_DELAY_CHANCE = 0.30;   // 30% chance for guard delayed transition
+      const TURN_DELAY_RANGE = [0.15, 0.45]; // seconds
+
+      // Audio & Horror Elimination Constants
+      const SHOT_DURATION = 0.32;       // synthesized gunshot duration (seconds)
+      const SHOT_VOLUME = 0.65;         // gunshot gain level
+      const ELIMINATION_FALL_DURATION = 0.75; // duration of player collapse animation (seconds)
+      const OVERLAY_DELAY = 0.90;       // delay before defeat overlay appears (0.7 - 1.1s)
+      const AMBIENT_AUDIO_LEVEL = 0.16; // quiet procedural tension atmosphere
+      const SCREEN_SHAKE_INTENSITY = 14; // screen-shake magnitude in canvas pixels
+
+      // World geometry
+      const WORLD_WIDTH = 900;
+      const WORLD_HEIGHT = 1400;
+      const GUARD_Y = 185;
+      const TREE_Y = 95;
+
+      /* -------------------------------------------------------------
+         2. SYNTHESIZED WEB AUDIO & SPEECH MODULE (Procedural Only)
+         ------------------------------------------------------------- */
+      const SoundSystem = (() => {
+        let audioCtx = null;
+        let masterGain = null;
+        let ambientGain = null;
+        let ambientDrone1 = null;
+        let ambientDrone2 = null;
+        let ambientNoiseNode = null;
+        let ambientActive = false;
+
+        function initContext() {
+          if (audioCtx) return;
+          try {
+            const AudioClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioClass) {
+              audioCtx = new AudioClass();
+              masterGain = audioCtx.createGain();
+              masterGain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+              masterGain.connect(audioCtx.destination);
+            }
+          } catch (_) {
+            // Audio failure fallback
+          }
+        }
+
+        function resumeContext() {
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+          }
+        }
+
+        // Start low ambient procedural atmosphere (drone + filtered wind)
+        function startAmbience() {
+          if (!audioCtx || audioCtx.state !== 'running' || ambientActive) return;
+          try {
+            ambientActive = true;
+            ambientGain = audioCtx.createGain();
+            ambientGain.gain.setValueAtTime(0.001, audioCtx.currentTime);
+            ambientGain.gain.linearRampToValueAtTime(AMBIENT_AUDIO_LEVEL, audioCtx.currentTime + 2.0);
+            ambientGain.connect(masterGain);
+
+            // Low frequency eerie dual-drone
+            ambientDrone1 = audioCtx.createOscillator();
+            ambientDrone2 = audioCtx.createOscillator();
+            ambientDrone1.type = 'sawtooth';
+            ambientDrone2.type = 'sine';
+            ambientDrone1.frequency.setValueAtTime(55, audioCtx.currentTime); // A1
+            ambientDrone2.frequency.setValueAtTime(54.4, audioCtx.currentTime); // slight binaural detune
+
+            // Filter the drone to keep it deep, dark, and unobtrusive
+            const droneFilter = audioCtx.createBiquadFilter();
+            droneFilter.type = 'lowpass';
+            droneFilter.frequency.setValueAtTime(110, audioCtx.currentTime);
+
+            ambientDrone1.connect(droneFilter);
+            ambientDrone2.connect(droneFilter);
+            droneFilter.connect(ambientGain);
+
+            ambientDrone1.start();
+            ambientDrone2.start();
+
+            // Filtered white noise for subtle wind draft
+            const bufferSize = audioCtx.sampleRate * 2;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+              output[i] = Math.random() * 2 - 1;
+            }
+
+            ambientNoiseNode = audioCtx.createBufferSource();
+            ambientNoiseNode.buffer = noiseBuffer;
+            ambientNoiseNode.loop = true;
+
+            const noiseFilter = audioCtx.createBiquadFilter();
+            noiseFilter.type = 'bandpass';
+            noiseFilter.frequency.setValueAtTime(220, audioCtx.currentTime);
+            noiseFilter.Q.setValueAtTime(1.8, audioCtx.currentTime);
+
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+
+            ambientNoiseNode.connect(noiseFilter);
+            noiseFilter.connect(noiseGain);
+            noiseGain.connect(ambientGain);
+
+            ambientNoiseNode.start();
+          } catch (_) {}
+        }
+
+        function stopAmbience() {
+          if (!ambientActive || !audioCtx) return;
+          try {
+            ambientActive = false;
+            if (ambientGain) {
+              const now = audioCtx.currentTime;
+              ambientGain.gain.linearRampToValueAtTime(0.0001, now + 0.4);
+              setTimeout(() => {
+                try {
+                  if (ambientDrone1) { ambientDrone1.stop(); ambientDrone1.disconnect(); }
+                  if (ambientDrone2) { ambientDrone2.stop(); ambientDrone2.disconnect(); }
+                  if (ambientNoiseNode) { ambientNoiseNode.stop(); ambientNoiseNode.disconnect(); }
+                  if (ambientGain) { ambientGain.disconnect(); }
+                } catch (_) {}
+              }, 450);
+            }
+          } catch (_) {}
+        }
+
+        // Procedural Heartbeat Pulse (triggered occasionally in late run)
+        function playHeartbeat() {
+          if (!audioCtx || audioCtx.state !== 'running') return;
+          try {
+            const now = audioCtx.currentTime;
+            [0, 0.14].forEach((offset, idx) => {
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(idx === 0 ? 68 : 55, now + offset);
+              osc.frequency.exponentialRampToValueAtTime(32, now + offset + 0.12);
+
+              gain.gain.setValueAtTime(0, now + offset);
+              gain.gain.linearRampToValueAtTime(0.18, now + offset + 0.015);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.13);
+
+              osc.connect(gain);
+              gain.connect(masterGain);
+              osc.start(now + offset);
+              osc.stop(now + offset + 0.15);
+            });
+          } catch (_) {}
+        }
+
+        // Green phase start chime
+        function playGreenCue() {
+          if (!audioCtx || audioCtx.state !== 'running') return;
+          try {
+            const now = audioCtx.currentTime;
+            [523.25, 783.99].forEach((f, i) => {
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(f, now + i * 0.08);
+
+              gain.gain.setValueAtTime(0, now + i * 0.08);
+              gain.gain.linearRampToValueAtTime(0.24, now + i * 0.08 + 0.015);
+              gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.08 + 0.3);
+
+              osc.connect(gain);
+              gain.connect(masterGain);
+              osc.start(now + i * 0.08);
+              osc.stop(now + i * 0.08 + 0.32);
+            });
+          } catch (_) {}
+        }
+
+        // Countdown beep per number (1, 2, 3)
+        function playCountBeep(num) {
+          if (!audioCtx || audioCtx.state !== 'running') return;
+          try {
+            const freqs = [440, 554.37, 659.25];
+            const f = freqs[num - 1] || 440;
+            const now = audioCtx.currentTime;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(f, now);
+
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.26, now + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start(now);
+            osc.stop(now + 0.15);
+          } catch (_) {}
+        }
+
+        // Red transition alarm (deep unsettling klaxon)
+        function playRedAlarm() {
+          if (!audioCtx || audioCtx.state !== 'running') return;
+          try {
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const sub = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(740, now);
+            osc.frequency.exponentialRampToValueAtTime(280, now + 0.35);
+
+            sub.type = 'triangle';
+            sub.frequency.setValueAtTime(140, now);
+            sub.frequency.exponentialRampToValueAtTime(60, now + 0.35);
+
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.32, now + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+
+            osc.connect(gain);
+            sub.connect(gain);
+            gain.connect(masterGain);
+
+            osc.start(now);
+            sub.start(now);
+            osc.stop(now + 0.4);
+            sub.stop(now + 0.4);
+          } catch (_) {}
+        }
+
+        // Synthesized Gunshot (Layered noise burst, filtered crack, and low-frequency impact)
+        function playGunshot() {
+          if (!audioCtx || audioCtx.state !== 'running') return;
+          try {
+            const now = audioCtx.currentTime;
+
+            // 1. Transient White Noise Blast
+            const sampleRate = audioCtx.sampleRate;
+            const noiseDuration = SHOT_DURATION;
+            const noiseBuffer = audioCtx.createBuffer(1, Math.floor(sampleRate * noiseDuration), sampleRate);
+            const noiseData = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < noiseBuffer.length; i++) {
+              noiseData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * 0.04));
+            }
+
+            const noiseSource = audioCtx.createBufferSource();
+            noiseSource.buffer = noiseBuffer;
+
+            // Bandpass filter to model gunshot muzzle blast crack
+            const noiseFilter = audioCtx.createBiquadFilter();
+            noiseFilter.type = 'bandpass';
+            noiseFilter.frequency.setValueAtTime(1400, now);
+            noiseFilter.frequency.exponentialRampToValueAtTime(450, now + 0.15);
+            noiseFilter.Q.setValueAtTime(2.2, now);
+
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(SHOT_VOLUME, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDuration);
+
+            noiseSource.connect(noiseFilter);
+            noiseFilter.connect(noiseGain);
+            noiseGain.connect(masterGain);
+
+            noiseSource.start(now);
+
+            // 2. Low-Frequency Sub Impact Punch (Body & Weight)
+            const subOsc = audioCtx.createOscillator();
+            const subGain = audioCtx.createGain();
+            subOsc.type = 'triangle';
+            subOsc.frequency.setValueAtTime(190, now);
+            subOsc.frequency.exponentialRampToValueAtTime(36, now + 0.18);
+
+            subGain.gain.setValueAtTime(SHOT_VOLUME * 0.9, now);
+            subGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+            subOsc.connect(subGain);
+            subGain.connect(masterGain);
+
+            subOsc.start(now);
+            subOsc.stop(now + 0.25);
+          } catch (_) {}
+        }
+
+        // Win fanfare melody
+        function playWinFanfare() {
+          if (!audioCtx || audioCtx.state !== 'running') return;
+          try {
+            const notes = [523.25, 659.25, 783.99, 1046.5];
+            const now = audioCtx.currentTime;
+            notes.forEach((freq, idx) => {
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(freq, now + idx * 0.11);
+
+              gain.gain.setValueAtTime(0, now + idx * 0.11);
+              gain.gain.linearRampToValueAtTime(0.28, now + idx * 0.11 + 0.02);
+              gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.11 + 0.4);
+
+              osc.connect(gain);
+              gain.connect(masterGain);
+              osc.start(now + idx * 0.11);
+              osc.stop(now + idx * 0.11 + 0.42);
+            });
+          } catch (_) {}
+        }
+
+        // Defeat dissonant tone / sting
+        function playLoseCue() {
+          if (!audioCtx || audioCtx.state !== 'running') return;
+          try {
+            const freqs = [311.13, 293.66, 196.0, 98.0];
+            const now = audioCtx.currentTime;
+            freqs.forEach((freq, idx) => {
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+              osc.frequency.exponentialRampToValueAtTime(freq * 0.65, now + idx * 0.1 + 0.45);
+
+              gain.gain.setValueAtTime(0, now + idx * 0.1);
+              gain.gain.linearRampToValueAtTime(0.22, now + idx * 0.1 + 0.02);
+              gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.1 + 0.48);
+
+              osc.connect(gain);
+              gain.connect(masterGain);
+              osc.start(now + idx * 0.1);
+              osc.stop(now + idx * 0.1 + 0.5);
+            });
+          } catch (_) {}
+        }
+
+        return {
+          init: initContext,
+          resume: resumeContext,
+          startAmbience,
+          stopAmbience,
+          playHeartbeat,
+          playGreenCue,
+          playCountBeep,
+          playRedAlarm,
+          playGunshot,
+          playWinFanfare,
+          playLoseCue
+        };
+      })();
+
+      // Optional Web Speech synthesis (strictly non-blocking)
+      function speakCount(num) {
+        if (!('speechSynthesis' in window)) return;
+        try {
+          window.speechSynthesis.cancel();
+          const words = ['One', 'Two', 'Three'];
+          const text = words[num - 1];
+          if (!text) return;
+          const u = new SpeechSynthesisUtterance(text);
+          u.rate = 1.35;
+          u.volume = 0.55;
+          window.speechSynthesis.speak(u);
+        } catch (_) {}
+      }
+
+      function cancelSpeech() {
+        if ('speechSynthesis' in window) {
+          try { window.speechSynthesis.cancel(); } catch (_) {}
+        }
+      }
+
+      /* -------------------------------------------------------------
+         3. CENTRALIZED RANDOMNESS & DIFFICULTY
+         ------------------------------------------------------------- */
+      function randomRange(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
+      // Normalized game progress from 0 (at START_Y) to 1 (at FINISH_Y)
+      function getProgress(py) {
+        return Math.max(0, Math.min(1, (START_Y - py) / (START_Y - FINISH_Y)));
+      }
+
+      // Compute count duration for 1, 2, or 3 based on round & progress
+      function computeCountDuration(round, progress) {
+        const roundReduction = (round - 1) * 0.055;
+        const minBase = Math.max(0.35, 0.78 - roundReduction);
+        const maxBase = Math.max(0.45, 1.12 - roundReduction);
+
+        // Progress reduction up to 20%
+        const progFactor = 1.0 - (0.20 * progress);
+        const finalMin = Math.max(0.35, minBase * progFactor);
+        const finalMax = Math.max(finalMin + 0.05, maxBase * progFactor);
+
+        return randomRange(finalMin, finalMax);
+      }
+
+      // Compute dynamic grace period based on round & progress
+      function computeGraceDuration(round, progress) {
+        const grace = GRACE_FIRST - (round - 1) * 0.045 - (progress * 0.12);
+        return Math.max(GRACE_MIN, grace);
+      }
+
+      // Difficulty speed level (1 to 10)
+      function computeSpeedLevel(round, progress) {
+        const raw = 1 + (round - 1) * 0.9 + (progress * 3.2);
+        return Math.min(10, Math.max(1, Math.floor(raw)));
+      }
+
+      /* -------------------------------------------------------------
+         4. STATE MACHINE & GAME VARIABLES
+         ------------------------------------------------------------- */
+      // Exactly 5 primary states: 'START', 'GREEN', 'RED', 'WIN', 'LOSE'
+      let currentState = 'START';
+      let sessionId = 0;
+      let roundId = 0;
+
+      // Gameplay variables
+      let gameTimer = GAME_TIME;
+      let playerY = START_Y;
+      let playerSpeed = 0;
+      let roundNumber = 1;
+      let speedLevel = 1;
+      let previousSpeedLevel = 1;
+      let defeatReason = '';
+
+      // Animation parameters
+      const playerX = WORLD_WIDTH / 2;
+      let playerRunCycle = 0;
+      let runDistance = 0;
+      let heartbeatTimer = 0;
+
+      // Guard doll parameters:
+      // guardFacing is 0 (facing tree) to 1 (facing player)
+      let guardFacing = 0;
+      let guardHeadFacing = 0;
+      let guardTurnTimer = 0;
+      let guardTurnBackTimer = 0;
+      let guardTwitchTimer = 0;
+      let guardTwitchOffset = 0;
+
+      // Substates and phase-specific timers inside GREEN
+      let greenSubstate = 'COUNT_1'; // 'COUNT_1', 'COUNT_2', 'COUNT_3', 'DELAY'
+      let countNumber = 1;
+      let countTimer = 0;
+      let count1Duration = 1.0;
+      let count2Duration = 1.0;
+      let count3Duration = 1.0;
+      let hasTurnDelay = false;
+      let turnDelayDuration = 0;
+      let turnDelayTimer = 0;
+
+      // Substates and phase-specific timers inside RED
+      let redSubstate = 'GRACE'; // 'GRACE', 'JUDGMENT', 'TURN_BACK'
+      let graceTimer = 0;
+      let judgmentTimer = 0;
+      let keyHeldAtRedStart = false;
+
+      // Elimination sequence & Death animation variables (inside LOSE state)
+      let isEliminationByShot = false;
+      let eliminationAnimTimer = 0;
+      let gunshotFired = false;
+      let screenShakeMagnitude = 0;
+      let impactFlashAlpha = 0;
+
+      // Particles & toasts
+      let particles = [];
+      let toastTimer = 0;
+
+      // Tab visibility & input state
+      let isTabHidden = false;
+      const keysHeld = { w: false, up: false };
+      let touchHeld = false;
+      let activePointerId = null;
+
+      /* -------------------------------------------------------------
+         5. INPUT MANAGEMENT
+         ------------------------------------------------------------- */
+      function isInputActive() {
+        return keysHeld.w || keysHeld.up || touchHeld;
+      }
+
+      function clearInputs() {
+        keysHeld.w = false;
+        keysHeld.up = false;
+        touchHeld = false;
+        activePointerId = null;
+        const runBtn = document.getElementById('btn-run');
+        if (runBtn) runBtn.classList.remove('active');
+      }
+
+      // Keyboard listeners
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyW' || e.key === 'w' || e.key === 'W') {
+          keysHeld.w = true;
+          e.preventDefault();
+        } else if (e.code === 'ArrowUp' || e.key === 'ArrowUp') {
+          keysHeld.up = true;
+          e.preventDefault();
+        } else if (e.code === 'Space' || e.key === ' ') {
+          e.preventDefault();
+          if (currentState === 'START') {
+            startGame();
+          } else if (currentState === 'WIN' || currentState === 'LOSE') {
+            restartGame();
+          }
+        } else if (e.code === 'ArrowDown') {
+          e.preventDefault();
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.code === 'KeyW' || e.key === 'w' || e.key === 'W') {
+          keysHeld.w = false;
+        } else if (e.code === 'ArrowUp' || e.key === 'ArrowUp') {
+          keysHeld.up = false;
+        }
+      });
+
+      // Window blur & hidden handling
+      window.addEventListener('blur', clearInputs);
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          clearInputs();
+          isTabHidden = true;
+        } else {
+          isTabHidden = false;
+          lastFrameTime = 0; // prevents large dt spike on resume
+        }
+      });
+
+      // Pointer & Touch controls for "HOLD TO RUN" button
+      const runBtn = document.getElementById('btn-run');
+
+      runBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (activePointerId !== null) return;
+        activePointerId = e.pointerId;
+        try { runBtn.setPointerCapture(e.pointerId); } catch (_) {}
+        touchHeld = true;
+        runBtn.classList.add('active');
+        SoundSystem.init();
+        SoundSystem.resume();
+      });
+
+      const releasePointer = (e) => {
+        if (e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
+        activePointerId = null;
+        touchHeld = false;
+        runBtn.classList.remove('active');
+      };
+
+      runBtn.addEventListener('pointerup', releasePointer);
+      runBtn.addEventListener('pointercancel', releasePointer);
+      runBtn.addEventListener('lostpointercapture', releasePointer);
+      runBtn.addEventListener('pointerleave', releasePointer);
+      runBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      /* -------------------------------------------------------------
+         6. DOM REFERENCES & HUD HELPERS
+         ------------------------------------------------------------- */
+      const domCanvas = document.getElementById('game-canvas');
+      const ctx = domCanvas.getContext('2d');
+      const impactFlashEl = document.getElementById('impact-flash');
+      const hudTime = document.getElementById('hud-time');
+      const lampRed = document.getElementById('lamp-red');
+      const lampGreen = document.getElementById('lamp-green');
+      const statusText = document.getElementById('status-text');
+      const hudRoundLvl = document.getElementById('hud-round-lvl');
+      const hudDistText = document.getElementById('hud-dist-text');
+      const progressFill = document.getElementById('progress-fill');
+      const speedToast = document.getElementById('speed-toast');
+
+      const screenStart = document.getElementById('screen-start');
+      const screenWin = document.getElementById('screen-win');
+      const screenLose = document.getElementById('screen-lose');
+      const loseReasonEl = document.getElementById('lose-reason');
+      const winTimeVal = document.getElementById('win-time-val');
+      const winRoundsVal = document.getElementById('win-rounds-val');
+      const winLevelVal = document.getElementById('win-level-val');
+      const loseTimeVal = document.getElementById('lose-time-val');
+      const loseDistVal = document.getElementById('lose-dist-val');
+
+      // Buttons
+      document.getElementById('btn-start').addEventListener('click', () => startGame());
+      document.getElementById('btn-restart-win').addEventListener('click', () => restartGame());
+      document.getElementById('btn-restart-lose').addEventListener('click', () => restartGame());
+
+      function hideAllScreens() {
+        screenStart.classList.remove('active');
+        screenWin.classList.remove('active');
+        screenLose.classList.remove('active');
+      }
+
+      function updateHUD() {
+        // Time display
+        hudTime.textContent = gameTimer.toFixed(1) + 's';
+        if (gameTimer <= 10) {
+          hudTime.className = 'hud-val time-val time-critical';
+        } else if (gameTimer <= 20) {
+          hudTime.className = 'hud-val time-val time-warning';
+        } else {
+          hudTime.className = 'hud-val time-val';
+        }
+
+        // Round & Speed level
+        hudRoundLvl.textContent = `R${roundNumber} / L${speedLevel}`;
+
+        // Distance & Progress (represented as COURSE_LENGTH_METERS)
+        const progress = getProgress(playerY);
+        const percent = Math.floor(progress * 100);
+        const metersRemaining = Math.max(0, Math.round((1 - progress) * COURSE_LENGTH_METERS));
+        hudDistText.textContent = `${metersRemaining}m TO GO`;
+        progressFill.style.width = `${percent}%`;
+
+        // Traffic Light & Status
+        if (currentState === 'GREEN') {
+          lampGreen.classList.add('active');
+          lampRed.classList.remove('active');
+          statusText.className = 'status-badge status-go';
+          statusText.textContent = `GO (${countNumber})`;
+        } else if (currentState === 'RED') {
+          lampGreen.classList.remove('active');
+          lampRed.classList.add('active');
+          if (redSubstate === 'GRACE') {
+            statusText.className = 'status-badge status-brake';
+            statusText.textContent = 'BRAKE!';
+          } else {
+            statusText.className = 'status-badge status-stop';
+            statusText.textContent = 'STOP!';
+          }
+        } else {
+          lampGreen.classList.remove('active');
+          lampRed.classList.remove('active');
+          statusText.className = 'status-badge';
+          statusText.textContent = 'WAIT';
+        }
+      }
+
+      function triggerSpeedToast() {
+        toastTimer = 1.6;
+        speedToast.textContent = `SPEED LEVEL ${speedLevel}!`;
+        speedToast.classList.add('visible');
+      }
+
+      /* -------------------------------------------------------------
+         7. STATE MACHINE IMPLEMENTATION
+         Exactly 5 primary states: 'START', 'GREEN', 'RED', 'WIN', 'LOSE'
+         All state changes go through ONE transition function.
+         ------------------------------------------------------------- */
+      function transitionTo(nextState, reason = '') {
+        // Win and Lose are terminal until restart
+        if (currentState === 'WIN' || currentState === 'LOSE') return;
+        if (currentState === nextState) return;
+
+        currentState = nextState;
+
+        if (nextState === 'GREEN') {
+          enterGreenState();
+        } else if (nextState === 'RED') {
+          enterRedState();
+        } else if (nextState === 'WIN') {
+          enterWinState();
+        } else if (nextState === 'LOSE') {
+          enterLoseState(reason);
+        }
+        updateHUD();
+      }
+
+      function enterGreenState() {
+        roundId++;
+        const prog = getProgress(playerY);
+        speedLevel = computeSpeedLevel(roundNumber, prog);
+        if (speedLevel > previousSpeedLevel) {
+          previousSpeedLevel = speedLevel;
+          triggerSpeedToast();
+        }
+
+        guardFacing = 0;
+        guardHeadFacing = 0;
+        guardTurnTimer = 0;
+        countNumber = 1;
+        countTimer = 0;
+        greenSubstate = 'COUNT_1';
+
+        // Calculate count durations independently
+        count1Duration = computeCountDuration(roundNumber, prog);
+        count2Duration = computeCountDuration(roundNumber, prog);
+        count3Duration = computeCountDuration(roundNumber, prog);
+
+        // Delayed turn (30% chance)
+        hasTurnDelay = Math.random() < TURN_DELAY_CHANCE;
+        turnDelayDuration = hasTurnDelay ? randomRange(TURN_DELAY_RANGE[0], TURN_DELAY_RANGE[1]) : 0;
+        turnDelayTimer = 0;
+
+        SoundSystem.playGreenCue();
+        SoundSystem.playCountBeep(1);
+        speakCount(1);
+      }
+
+      function enterRedState() {
+        cancelSpeech();
+        SoundSystem.playRedAlarm();
+
+        redSubstate = 'GRACE';
+        const prog = getProgress(playerY);
+        graceTimer = computeGraceDuration(roundNumber, prog);
+        judgmentTimer = JUDGMENT_WINDOW;
+        guardTurnTimer = 0;
+        guardFacing = 0;
+        guardHeadFacing = 0;
+
+        // Snapshot input at transition: a pre-held key is given grace to release
+        keyHeldAtRedStart = isInputActive();
+      }
+
+      function enterWinState() {
+        cancelSpeech();
+        clearInputs();
+        SoundSystem.stopAmbience();
+        SoundSystem.playWinFanfare();
+
+        const timeTaken = (GAME_TIME - gameTimer).toFixed(1);
+        winTimeVal.textContent = timeTaken + 's';
+        winRoundsVal.textContent = String(roundNumber);
+        winLevelVal.textContent = String(speedLevel);
+
+        spawnConfetti();
+        hideAllScreens();
+        screenWin.classList.add('active');
+      }
+
+      function enterLoseState(reason) {
+        cancelSpeech();
+        clearInputs();
+        defeatReason = reason || 'You moved during RED LIGHT.';
+        loseReasonEl.textContent = defeatReason;
+
+        const timePlayed = (GAME_TIME - gameTimer).toFixed(1);
+        const distPercent = Math.floor(getProgress(playerY) * 100);
+        loseTimeVal.textContent = timePlayed + 's';
+        loseDistVal.textContent = distPercent + '%';
+
+        if (defeatReason.includes('RED LIGHT')) {
+          // Movement-violation elimination sequence:
+          // Freeze movement immediately, trigger one synthesized gunshot,
+          // screen shake, non-graphic collapse animation, then show overlay after OVERLAY_DELAY.
+          isEliminationByShot = true;
+          eliminationAnimTimer = 0;
+          gunshotFired = false;
+          hideAllScreens(); // Keep overlay hidden while collapse animation plays
+        } else {
+          // Timer expiry loss
+          isEliminationByShot = false;
+          SoundSystem.stopAmbience();
+          SoundSystem.playLoseCue();
+          hideAllScreens();
+          screenLose.classList.add('active');
+        }
+      }
+
+      /* -------------------------------------------------------------
+         8. LIFECYCLE & RESET
+         ------------------------------------------------------------- */
+      function resetGame() {
+        sessionId++;
+        roundId = 0;
+        currentState = 'START';
+        gameTimer = GAME_TIME;
+        playerY = START_Y;
+        playerSpeed = 0;
+        playerRunCycle = 0;
+        runDistance = 0;
+        roundNumber = 1;
+        speedLevel = 1;
+        previousSpeedLevel = 1;
+        defeatReason = '';
+        heartbeatTimer = 0;
+
+        guardFacing = 0;
+        guardHeadFacing = 0;
+        guardTurnTimer = 0;
+        guardTurnBackTimer = 0;
+        guardTwitchTimer = 0;
+        guardTwitchOffset = 0;
+
+        countNumber = 1;
+        countTimer = 0;
+        hasTurnDelay = false;
+        turnDelayTimer = 0;
+        greenSubstate = 'COUNT_1';
+        redSubstate = 'GRACE';
+
+        isEliminationByShot = false;
+        eliminationAnimTimer = 0;
+        gunshotFired = false;
+        screenShakeMagnitude = 0;
+        impactFlashAlpha = 0;
+        if (impactFlashEl) impactFlashEl.style.opacity = '0';
+
+        particles = [];
+        toastTimer = 0;
+        speedToast.classList.remove('visible');
+
+        SoundSystem.stopAmbience();
+        clearInputs();
+        cancelSpeech();
+        updateHUD();
+      }
+
+      function startGame() {
+        if (currentState !== 'START') return;
+        SoundSystem.init();
+        SoundSystem.resume();
+        SoundSystem.startAmbience();
+        hideAllScreens();
+        transitionTo('GREEN');
+      }
+
+      function restartGame() {
+        if (currentState !== 'WIN' && currentState !== 'LOSE') return;
+        resetGame();
+        startGame();
+      }
+
+      /* -------------------------------------------------------------
+         9. PARTICLES & VISUAL EFFECTS
+         ------------------------------------------------------------- */
+      function spawnFootstepDust(x, y) {
+        particles.push({
+          type: 'dust',
+          x: x + randomRange(-14, 14),
+          y: y + randomRange(-4, 4),
+          vx: randomRange(-15, 15),
+          vy: randomRange(10, 30),
+          size: randomRange(4, 8),
+          alpha: 0.5,
+          life: randomRange(0.25, 0.45)
+        });
+      }
+
+      function spawnSkidSmoke(x, y) {
+        particles.push({
+          type: 'skid',
+          x: x + randomRange(-18, 18),
+          y: y + randomRange(-4, 6),
+          vx: randomRange(-40, 40),
+          vy: randomRange(5, 20),
+          size: randomRange(8, 16),
+          alpha: 0.6,
+          life: randomRange(0.3, 0.55)
+        });
+      }
+
+      function spawnConfetti() {
+        const colors = ['#38bdf8', '#34d399', '#f59e0b', '#ec4899', '#a855f7'];
+        for (let i = 0; i < 90; i++) {
+          particles.push({
+            type: 'confetti',
+            x: randomRange(100, WORLD_WIDTH - 100),
+            y: randomRange(-100, 200),
+            vx: randomRange(-60, 60),
+            vy: randomRange(100, 260),
+            size: randomRange(5, 10),
+            alpha: 1.0,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            rotation: randomRange(0, Math.PI * 2),
+            rotSpeed: randomRange(-4, 4),
+            life: randomRange(2.5, 4.5)
+          });
+        }
+      }
+
+      function spawnEliminationImpact(x, y) {
+        // Red impact shockwave ring
+        particles.push({
+          type: 'ring',
+          x: x,
+          y: y,
+          size: 8,
+          maxSize: 90,
+          alpha: 0.9,
+          life: 0.45
+        });
+        // Non-graphic stylized spark particles
+        for (let i = 0; i < 18; i++) {
+          const angle = randomRange(0, Math.PI * 2);
+          const spd = randomRange(50, 180);
+          particles.push({
+            type: 'spark',
+            x: x,
+            y: y,
+            vx: Math.cos(angle) * spd,
+            vy: Math.sin(angle) * spd,
+            size: randomRange(3, 5),
+            alpha: 0.9,
+            life: randomRange(0.3, 0.5)
+          });
+        }
+      }
+
+      function updateParticles(dt) {
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.life -= dt;
+          if (p.life <= 0) {
+            particles.splice(i, 1);
+            continue;
+          }
+          if (p.type === 'confetti') {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.rotation += p.rotSpeed * dt;
+          } else if (p.type === 'ring') {
+            p.size += (p.maxSize - p.size) * (dt * 12);
+            p.alpha = Math.max(0, p.life / 0.45);
+          } else {
+            p.x += (p.vx || 0) * dt;
+            p.y += (p.vy || 0) * dt;
+            p.alpha = Math.max(0, p.alpha - dt * 1.5);
+          }
+        }
+      }
+
+      /* -------------------------------------------------------------
+         10. MAIN PHYSICS & STATE UPDATE
+         Update Order:
+         1. Advance active gameplay time and movement.
+         2. Resolve RED violations.
+         3. Resolve finish line.
+         4. Resolve timer expiry.
+         ------------------------------------------------------------- */
+      function update(dt) {
+        if (isTabHidden) return;
+
+        // Toast timer
+        if (toastTimer > 0) {
+          toastTimer -= dt;
+          if (toastTimer <= 0) {
+            speedToast.classList.remove('visible');
+          }
+        }
+
+        // Particle updates
+        updateParticles(dt);
+
+        // Guard tiny servo-twitch during GREEN (unnerving mechanical realism)
+        if (currentState === 'GREEN') {
+          guardTwitchTimer += dt;
+          if (guardTwitchTimer > 3.5) {
+            if (Math.random() < 0.3) {
+              guardTwitchOffset = (Math.random() - 0.5) * 0.08;
+            }
+            guardTwitchTimer = 0;
+          } else if (guardTwitchTimer > 0.1) {
+            guardTwitchOffset = 0;
+          }
+        } else {
+          guardTwitchOffset = 0;
+        }
+
+        // Handle Horror Elimination Sequence (Inside terminal LOSE state)
+        if (currentState === 'LOSE' && isEliminationByShot) {
+          eliminationAnimTimer += dt;
+
+          // Fire synthesized gunshot exactly once at hit moment
+          if (!gunshotFired) {
+            gunshotFired = true;
+            SoundSystem.playGunshot();
+            spawnEliminationImpact(playerX, playerY - 10);
+
+            // Respect prefers-reduced-motion for screen shake & impact flash
+            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (!reduceMotion) {
+              screenShakeMagnitude = SCREEN_SHAKE_INTENSITY;
+              impactFlashAlpha = 0.85;
+            }
+          }
+
+          // Damping screen shake & impact flash
+          if (screenShakeMagnitude > 0) {
+            screenShakeMagnitude = Math.max(0, screenShakeMagnitude - dt * 45);
+          }
+          if (impactFlashAlpha > 0) {
+            impactFlashAlpha = Math.max(0, impactFlashAlpha - dt * 6.5);
+            if (impactFlashEl) impactFlashEl.style.opacity = String(impactFlashAlpha);
+          }
+
+          // Delay the defeat overlay until the gunshot and collapse have completed (approx 0.9s)
+          if (eliminationAnimTimer >= OVERLAY_DELAY && !screenLose.classList.contains('active')) {
+            SoundSystem.stopAmbience();
+            SoundSystem.playLoseCue();
+            screenLose.classList.add('active');
+          }
+
+          // Freeze all further gameplay during elimination sequence
+          return;
+        }
+
+        if (currentState !== 'GREEN' && currentState !== 'RED') {
+          return;
+        }
+
+        /* --- STEP 1: Advance active gameplay time and movement --- */
+        gameTimer -= dt;
+        if (gameTimer < 0) gameTimer = 0;
+
+        // Subtle procedural heartbeat pulse when nearing finish line or low time
+        heartbeatTimer += dt;
+        const progNow = getProgress(playerY);
+        const pulseInterval = progNow > 0.7 || gameTimer < 15 ? 1.0 : 2.5;
+        if (heartbeatTimer >= pulseInterval) {
+          heartbeatTimer = 0;
+          if (progNow > 0.4 || gameTimer < 20) {
+            SoundSystem.playHeartbeat();
+          }
+        }
+
+        const isInput = isInputActive();
+        if (isInput) {
+          playerSpeed = Math.min(MAX_SPEED, playerSpeed + PLAYER_ACCEL * dt);
+        } else {
+          playerSpeed = Math.max(0, playerSpeed - BRAKE_DECEL * dt);
+        }
+
+        playerY -= playerSpeed * dt;
+
+        // Visual run cycle & footsteps
+        if (playerSpeed > 0) {
+          runDistance += playerSpeed * dt;
+          playerRunCycle += playerSpeed * dt * 0.05;
+          if (playerSpeed > 30 && Math.random() < 0.45) {
+            spawnFootstepDust(playerX, playerY + 30);
+          }
+        }
+        if (!isInput && playerSpeed > 45 && Math.random() < 0.55) {
+          spawnSkidSmoke(playerX, playerY + 30);
+        }
+
+        // Advance internal phase logic
+        let redViolationTriggered = false;
+
+        if (currentState === 'GREEN') {
+          guardFacing = 0;     // facing tree
+          guardHeadFacing = 0;
+
+          if (greenSubstate === 'COUNT_1') {
+            countTimer += dt;
+            if (countTimer >= count1Duration) {
+              countNumber = 2;
+              countTimer = 0;
+              greenSubstate = 'COUNT_2';
+              SoundSystem.playCountBeep(2);
+              speakCount(2);
+            }
+          } else if (greenSubstate === 'COUNT_2') {
+            countTimer += dt;
+            if (countTimer >= count2Duration) {
+              countNumber = 3;
+              countTimer = 0;
+              greenSubstate = 'COUNT_3';
+              SoundSystem.playCountBeep(3);
+              speakCount(3);
+            }
+          } else if (greenSubstate === 'COUNT_3') {
+            countTimer += dt;
+            if (countTimer >= count3Duration) {
+              if (hasTurnDelay) {
+                greenSubstate = 'DELAY';
+                turnDelayTimer = 0;
+              } else {
+                transitionTo('RED');
+                return;
+              }
+            }
+          } else if (greenSubstate === 'DELAY') {
+            turnDelayTimer += dt;
+            // Guard remains back-facing, STOP is not shown, no alarm until transition
+            if (turnDelayTimer >= turnDelayDuration) {
+              transitionTo('RED');
+              return;
+            }
+          }
+        } else if (currentState === 'RED') {
+          // Uncanny Guard Turn: Head turns first (0 - 0.20s), body turns slightly later (0.12 - 0.35s)
+          if (guardTurnTimer < GUARD_TURN_TIME) {
+            guardTurnTimer += dt;
+            guardHeadFacing = Math.min(1, guardTurnTimer / 0.22);
+            guardFacing = guardTurnTimer > 0.10 ? Math.min(1, (guardTurnTimer - 0.10) / (GUARD_TURN_TIME - 0.10)) : 0;
+          } else {
+            guardFacing = 1;
+            guardHeadFacing = 1;
+          }
+
+          if (redSubstate === 'GRACE') {
+            graceTimer -= dt;
+
+            // Elimination condition 1: A NEW input was pressed after RED began
+            if (!keyHeldAtRedStart && isInput) {
+              redViolationTriggered = true;
+            }
+
+            if (graceTimer <= 0) {
+              // Grace expired: eliminate if any movement key is held OR forward speed > SAFE_SPEED
+              if (isInput || playerSpeed > SAFE_SPEED) {
+                redViolationTriggered = true;
+              } else {
+                redSubstate = 'JUDGMENT';
+              }
+            }
+          } else if (redSubstate === 'JUDGMENT') {
+            judgmentTimer -= dt;
+
+            // Elimination condition 2: During judgment window, any movement or speed > SAFE_SPEED eliminates immediately
+            if (isInput || playerSpeed > SAFE_SPEED) {
+              redViolationTriggered = true;
+            } else if (judgmentTimer <= 0) {
+              // Survived RED judgment window!
+              // Precedence rule: Finish during RED is a win once the full RED judgment is survived
+              if (playerY <= FINISH_Y) {
+                transitionTo('WIN');
+                return;
+              }
+
+              // Turn guard back (0.35s) then return to GREEN
+              redSubstate = 'TURN_BACK';
+              guardTurnBackTimer = 0;
+            }
+          } else if (redSubstate === 'TURN_BACK') {
+            guardTurnBackTimer += dt;
+            const backRatio = Math.max(0, 1 - (guardTurnBackTimer / GUARD_TURN_TIME));
+            guardFacing = backRatio;
+            guardHeadFacing = backRatio;
+
+            // Still red until back-facing and transition occurs
+            if (isInput || playerSpeed > SAFE_SPEED) {
+              redViolationTriggered = true;
+            } else if (guardTurnBackTimer >= GUARD_TURN_TIME) {
+              roundNumber++;
+              transitionTo('GREEN');
+              return;
+            }
+          }
+        }
+
+        /* --- STEP 2: Resolve RED violations --- */
+        if (redViolationTriggered) {
+          transitionTo('LOSE', 'You moved during RED LIGHT.');
+          return;
+        }
+
+        /* --- STEP 3: Resolve finish line --- */
+        if (playerY <= FINISH_Y) {
+          if (currentState === 'GREEN') {
+            // Finish during GREEN wins immediately and beats timeout in the same update
+            transitionTo('WIN');
+            return;
+          }
+          // (Note: If in RED, finish line is only awarded after judgment is survived, handled in Step 1)
+        }
+
+        /* --- STEP 4: Resolve timer expiry --- */
+        if (gameTimer <= 0) {
+          transitionTo('LOSE', 'Time expired.');
+          return;
+        }
+
+        updateHUD();
+      }
+
+      /* -------------------------------------------------------------
+         11. PROCEDURAL 2.5D CANVAS RENDERING
+         Atmosphere: Moonlit blue-gray shadows, 100m perspective,
+         cracked porcelain doll guard, non-graphic player death collapse.
+         ------------------------------------------------------------- */
+      function render() {
+        ctx.save();
+
+        // Screen Shake calculation (for gunshot impact)
+        let shakeOffsetX = 0;
+        let shakeOffsetY = 0;
+        if (screenShakeMagnitude > 0) {
+          shakeOffsetX = (Math.random() - 0.5) * screenShakeMagnitude;
+          shakeOffsetY = (Math.random() - 0.5) * screenShakeMagnitude;
+        }
+
+        ctx.setTransform(renderScaleX, 0, 0, renderScaleY, shakeOffsetX * renderScaleX, shakeOffsetY * renderScaleY);
+
+        // 1. Desolate Sky & Horizon Perimeter
+        drawSkyAndHorizon();
+
+        // 2. The Gnarled Withered Tree (behind guard)
+        drawTwistedTree(WORLD_WIDTH / 2, TREE_Y);
+
+        // 3. The Doll-Like Guard (stands at GUARD_Y)
+        drawGuardDoll(WORLD_WIDTH / 2, GUARD_Y);
+
+        // 4. Intimidating 100-Meter Field & Converging Track
+        drawArenaField();
+
+        // 5. Tiny Distant Finish Line
+        drawFinishLine(FINISH_Y);
+
+        // 6. Perspective Distance Ground Markers (100m down to 10m)
+        drawDistanceMarkers();
+
+        // 7. Player Runner (with speed-synced cycle or death collapse)
+        drawPlayer(playerX, playerY);
+
+        // 8. Visual Particles & Ambient Mist
+        drawParticles();
+        drawAtmosphericMist();
+
+        ctx.restore();
+      }
+
+      // Sky, Distant Dark Hills, and Cold Observation Perimeter
+      function drawSkyAndHorizon() {
+        // Cold moonlight sky
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, 360);
+        skyGrad.addColorStop(0, '#020408');
+        skyGrad.addColorStop(0.5, '#070f1e');
+        skyGrad.addColorStop(1, '#0e182b');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, WORLD_WIDTH, 360);
+
+        // Distant jagged mountains / silhouettes
+        ctx.fillStyle = '#060a14';
+        ctx.beginPath();
+        ctx.moveTo(0, 220);
+        ctx.lineTo(140, 175);
+        ctx.lineTo(310, 215);
+        ctx.lineTo(460, 160);
+        ctx.lineTo(620, 205);
+        ctx.lineTo(780, 170);
+        ctx.lineTo(WORLD_WIDTH, 210);
+        ctx.lineTo(WORLD_WIDTH, 310);
+        ctx.lineTo(0, 310);
+        ctx.closePath();
+        ctx.fill();
+
+        // Perimeter security barrier / chainlink watch wall
+        ctx.fillStyle = '#101726';
+        ctx.fillRect(0, 220, WORLD_WIDTH, 22);
+
+        // Barbed wire posts and warning lights
+        for (let x = 0; x < WORLD_WIDTH; x += 40) {
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(x, 212, 3, 30);
+
+          // Faint red observation beacons along perimeter
+          if (x % 120 === 0) {
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.65)';
+            ctx.beginPath();
+            ctx.arc(x + 1, 210, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // The Withered Ancient Tree
+      function drawTwistedTree(x, y) {
+        ctx.save();
+        // Gnarled dark trunk
+        ctx.fillStyle = '#161214';
+        ctx.beginPath();
+        ctx.moveTo(x - 32, y + 105);
+        ctx.quadraticCurveTo(x - 14, y + 42, x - 20, y - 8);
+        ctx.lineTo(x + 20, y - 8);
+        ctx.quadraticCurveTo(x + 14, y + 42, x + 32, y + 105);
+        ctx.closePath();
+        ctx.fill();
+
+        // Twisted branches
+        ctx.strokeStyle = '#120e10';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(x - 12, y + 10);
+        ctx.lineTo(x - 48, y - 30);
+        ctx.moveTo(x + 12, y + 10);
+        ctx.lineTo(x + 48, y - 28);
+        ctx.stroke();
+
+        // Oppressive foliage canopy (charcoal-crimson tones)
+        const canopyPuffs = [
+          { dx: 0, dy: -38, r: 70, col: '#1f1318' },
+          { dx: -60, dy: -24, r: 52, col: '#2c141d' },
+          { dx: 60, dy: -24, r: 52, col: '#2c141d' },
+          { dx: -32, dy: -58, r: 56, col: '#3b1622' },
+          { dx: 32, dy: -58, r: 56, col: '#3b1622' },
+          { dx: 0, dy: -70, r: 60, col: '#4c1d28' },
+          { dx: -18, dy: -80, r: 42, col: '#501e2b' },
+          { dx: 18, dy: -80, r: 42, col: '#501e2b' }
+        ];
+
+        canopyPuffs.forEach((c) => {
+          ctx.fillStyle = c.col;
+          ctx.beginPath();
+          ctx.arc(x + c.dx, y + c.dy, c.r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        ctx.restore();
+      }
+
+      // Original Doll-Like Guard (Eerie antique porcelain aesthetic)
+      function drawGuardDoll(x, y) {
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Guard cast shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.beginPath();
+        ctx.ellipse(0, 48, 28, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Body yaw and Head yaw (Head turns slightly first, unnatural servo motion)
+        const bodyYaw = guardFacing * Math.PI;
+        const headYaw = guardHeadFacing * Math.PI;
+        const bodyScaleX = Math.cos(bodyYaw);
+        const headScaleX = Math.cos(headYaw);
+        const isBodyFacingPlayer = guardFacing > 0.5;
+        const isHeadFacingPlayer = guardHeadFacing > 0.5;
+
+        // Rigid doll boots & stockings
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillRect(-12, 32, 8, 16);
+        ctx.fillRect(4, 32, 8, 16);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(-14, 44, 11, 6);
+        ctx.fillRect(3, 44, 11, 6);
+
+        // Torso & Dress (Antique Victorian plum/charcoal gown with high collar)
+        ctx.save();
+        ctx.scale(bodyScaleX === 0 ? 0.01 : bodyScaleX, 1);
+
+        // Inner blouse
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.roundRect(-16, -4, 32, 28, 4);
+        ctx.fill();
+
+        // Dark plum pinafore / apron dress
+        ctx.fillStyle = '#4c1d2e';
+        ctx.beginPath();
+        ctx.moveTo(-16, 10);
+        ctx.lineTo(-24, 34);
+        ctx.lineTo(24, 34);
+        ctx.lineTo(16, 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Brass button studs down chest
+        ctx.fillStyle = '#94a3b8';
+        [-1, 8, 17].forEach((by) => {
+          ctx.beginPath();
+          ctx.arc(0, by, 2, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Rigid extended arms & porcelain hands
+        ctx.fillStyle = '#3b1725';
+        ctx.fillRect(-22, -2, 7, 24);
+        ctx.fillRect(15, -2, 7, 24);
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(-22, 21, 7, 6);
+        ctx.fillRect(15, 21, 7, 6);
+
+        ctx.restore(); // restore body scale
+
+        // Head & Cracked Porcelain Mask
+        ctx.save();
+        // Uncanny head tilt when facing player
+        const tiltAngle = (isHeadFacingPlayer ? 0.08 : 0) + guardTwitchOffset;
+        ctx.rotate(tiltAngle);
+        ctx.scale(headScaleX === 0 ? 0.01 : headScaleX, 1);
+
+        // Porcelain Head Base
+        ctx.fillStyle = '#f1f5f9';
+        ctx.beginPath();
+        ctx.arc(0, -22, 18, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (!isHeadFacingPlayer) {
+          // BACK VIEW (GREEN): Facing tree
+          // Dark raven hair, tightly bound
+          ctx.fillStyle = '#090d16';
+          ctx.beginPath();
+          ctx.arc(0, -22, 19, 0, Math.PI * 2);
+          ctx.fill();
+
+          // High doll hair bun
+          ctx.beginPath();
+          ctx.arc(0, -38, 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Black velvet ribbon
+          ctx.fillStyle = '#471424';
+          ctx.fillRect(-10, -32, 20, 4);
+        } else {
+          // FRONT VIEW (RED): Facing player with terrifying mask
+          // Stark raven hair parted rigidly
+          ctx.fillStyle = '#090d16';
+          ctx.beginPath();
+          ctx.arc(0, -24, 18.5, Math.PI * 0.95, Math.PI * 2.05);
+          ctx.fill();
+
+          // High bun
+          ctx.beginPath();
+          ctx.arc(0, -38, 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Deep hollow dark eye sockets
+          ctx.fillStyle = '#020408';
+          ctx.beginPath();
+          ctx.ellipse(-7, -23, 4, 5.5, 0, 0, Math.PI * 2);
+          ctx.ellipse(7, -23, 4, 5.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Piercing red pinpoint pupils (locked gaze)
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.arc(-7, -23, 1.4, 0, Math.PI * 2);
+          ctx.arc(7, -23, 1.4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Subtle hairline porcelain cracks
+          ctx.strokeStyle = 'rgba(71, 85, 105, 0.6)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(-11, -30);
+          ctx.lineTo(-6, -26);
+          ctx.lineTo(-4, -20);
+          ctx.moveTo(8, -28);
+          ctx.lineTo(11, -22);
+          ctx.stroke();
+
+          // Fixed unsettling doll smile
+          ctx.strokeStyle = '#334155';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(0, -18, 9, 0.25 * Math.PI, 0.75 * Math.PI);
+          ctx.stroke();
+        }
+
+        ctx.restore(); // restore head scale and tilt
+
+        // Red Scanning Laser Fog Beam on RED phase
+        if (isHeadFacingPlayer && currentState === 'RED') {
+          const laserGrad = ctx.createLinearGradient(0, -20, 0, 750);
+          laserGrad.addColorStop(0, 'rgba(239, 68, 68, 0.45)');
+          laserGrad.addColorStop(0.3, 'rgba(239, 68, 68, 0.12)');
+          laserGrad.addColorStop(1, 'rgba(239, 68, 68, 0.0)');
+
+          ctx.fillStyle = laserGrad;
+          ctx.beginPath();
+          ctx.moveTo(0, -20);
+          ctx.lineTo(-260, 950);
+          ctx.lineTo(260, 950);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      // Intimidating 100-Meter Field & Long Perspective Track
+      function drawArenaField() {
+        // Cold barren clay ground
+        const groundGrad = ctx.createLinearGradient(0, 240, 0, WORLD_HEIGHT);
+        groundGrad.addColorStop(0, '#121927');
+        groundGrad.addColorStop(0.4, '#171f30');
+        groundGrad.addColorStop(1, '#1b2233');
+        ctx.fillStyle = groundGrad;
+        ctx.fillRect(0, 240, WORLD_WIDTH, WORLD_HEIGHT - 240);
+
+        // Perspective running track (converging toward distant horizon)
+        // Horizon top at y=240, width=440 (left=230, right=670)
+        // Foreground bottom at y=1400, width=820 (left=40, right=860)
+        ctx.fillStyle = '#141c2c';
+        ctx.beginPath();
+        ctx.moveTo(230, 240);
+        ctx.lineTo(670, 240);
+        ctx.lineTo(860, WORLD_HEIGHT);
+        ctx.lineTo(40, WORLD_HEIGHT);
+        ctx.closePath();
+        ctx.fill();
+
+        // White track perspective boundaries
+        ctx.strokeStyle = 'rgba(241, 245, 249, 0.75)';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(230, 240);
+        ctx.lineTo(40, WORLD_HEIGHT);
+        ctx.moveTo(670, 240);
+        ctx.lineTo(860, WORLD_HEIGHT);
+        ctx.stroke();
+
+        // Dashed Center Perspective Line
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([18, 22]);
+        ctx.beginPath();
+        ctx.moveTo(WORLD_WIDTH / 2, 240);
+        ctx.lineTo(WORLD_WIDTH / 2, WORLD_HEIGHT);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Tiny Distant Finish Line (at FINISH_Y = 300)
+      function drawFinishLine(fy) {
+        ctx.save();
+        const leftX = 220;
+        const rightX = 680;
+        const height = 24;
+
+        // Checkered finish banner
+        const checkSize = 12;
+        const count = Math.floor((rightX - leftX) / checkSize);
+
+        for (let i = 0; i < count; i++) {
+          for (let row = 0; row < 2; row++) {
+            ctx.fillStyle = (i + row) % 2 === 0 ? '#f8fafc' : '#090d16';
+            ctx.fillRect(leftX + i * checkSize, fy - 12 + row * 12, checkSize, 12);
+          }
+        }
+
+        // Warning neon edge
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(leftX, fy - 12, rightX - leftX, height);
+
+        // Sensor Beacons at finish ends
+        [-1, 1].forEach((dir) => {
+          const px = dir === -1 ? leftX - 8 : rightX + 8;
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(px - 5, fy - 36, 10, 48);
+
+          // Cyan glowing beacon
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(px, fy - 38, 7, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
+          ctx.beginPath();
+          ctx.arc(px, fy - 38, 15, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // "FINISH LINE" ground stencil
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.font = '900 18px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('FINISH LINE (0m)', WORLD_WIDTH / 2, fy - 20);
+
+        ctx.restore();
+      }
+
+      // Perspective Distance Ground Markers (Mapping full 100 meters)
+      function drawDistanceMarkers() {
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+        ctx.font = '800 15px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+
+        // Distance markers mapping the 100-meter range between START_Y (1250) and FINISH_Y (300)
+        const markers = [
+          { y: 1250, label: 'START (100 METERS)' },
+          { y: 1060, label: '80 METERS' },
+          { y: 870,  label: '60 METERS' },
+          { y: 680,  label: '40 METERS' },
+          { y: 490,  label: '20 METERS' },
+          { y: 395,  label: '10 METERS' }
+        ];
+
+        markers.forEach((m) => {
+          ctx.fillText(m.label, WORLD_WIDTH / 2, m.y);
+          ctx.fillRect(WORLD_WIDTH / 2 - 140, m.y + 4, 280, 2);
+        });
+
+        ctx.restore();
+      }
+
+      // Procedural Atmospheric Mist
+      function drawAtmosphericMist() {
+        ctx.save();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.15)';
+        ctx.fillRect(0, 240, WORLD_WIDTH, 120);
+        ctx.restore();
+      }
+
+      // Custom Runner (Player) with speed-synced animation or non-graphic death collapse
+      function drawPlayer(x, y) {
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Runner shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.beginPath();
+        ctx.ellipse(0, 36, 24, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Check if player is eliminated by gunshot (trigger stylized death collapse)
+        if (currentState === 'LOSE' && isEliminationByShot) {
+          drawPlayerDeathCollapse();
+          ctx.restore();
+          return;
+        }
+
+        // Active running animation
+        const sinCycle = Math.sin(playerRunCycle);
+        const isBraking = !isInputActive() && playerSpeed > 20;
+
+        let leftLegOffset = sinCycle * 16;
+        let rightLegOffset = -sinCycle * 16;
+        let leftArmOffset = -sinCycle * 18;
+        let rightArmOffset = sinCycle * 18;
+        let bodyBob = Math.abs(sinCycle) * 4;
+
+        if (isBraking) {
+          leftLegOffset = -12;
+          rightLegOffset = -12;
+          leftArmOffset = 16;
+          rightArmOffset = 16;
+          bodyBob = 0;
+        }
+
+        // Legs & Shoes
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(-14, 18, 8, 16 + leftLegOffset);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(-16, 32 + leftLegOffset, 12, 6);
+
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(6, 18, 8, 16 + rightLegOffset);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(4, 32 + rightLegOffset, 12, 6);
+
+        // Torso / Survival Athleisure Suit (Charcoal & Slate with reflective harness)
+        ctx.translate(0, -bodyBob);
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.roundRect(-16, -10, 32, 30, 6);
+        ctx.fill();
+
+        // Neon safety harness cross-straps
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(-14, -2, 28, 4);
+        ctx.fillRect(-2, -10, 4, 30);
+
+        // Arms
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(-22, -8 + leftArmOffset, 7, 20);
+        ctx.fillRect(15, -8 + rightArmOffset, 7, 20);
+
+        // Head & Hair
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(0, -22, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White runner sweatband
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-13, -26, 26, 6);
+
+        ctx.restore();
+      }
+
+      // Non-Graphic Stylized Player Death & Collapse Animation
+      function drawPlayerDeathCollapse() {
+        const fallProgress = Math.min(1, eliminationAnimTimer / ELIMINATION_FALL_DURATION);
+
+        // Kinematics:
+        // 0.0 - 0.25: recoil jolt, torso snaps back
+        // 0.25 - 0.75: knees buckle, character falls down to the turf
+        // 0.75 - 1.0: settles flat, motionless
+        const fallAngle = fallProgress * (Math.PI * 0.48); // collapses sideways/forward onto field
+        const dropY = fallProgress * 24;
+
+        ctx.translate(0, dropY);
+        ctx.rotate(fallAngle);
+
+        // Desaturating fallen silhouette
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(-14, 18 - fallProgress * 8, 8, 16);
+        ctx.fillRect(6, 18 - fallProgress * 8, 8, 16);
+
+        // Torso
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.roundRect(-16, -10, 32, 28, 5);
+        ctx.fill();
+
+        // Arms flailed
+        ctx.fillRect(-24, -6 - fallProgress * 6, 8, 18);
+        ctx.fillRect(16, -6 + fallProgress * 10, 8, 18);
+
+        // Head
+        ctx.fillStyle = '#090d16';
+        ctx.beginPath();
+        ctx.arc(0, -22, 14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw active particles
+      function drawParticles() {
+        particles.forEach((p) => {
+          ctx.save();
+          if (p.type === 'confetti') {
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation);
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.alpha;
+            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 1.5);
+          } else if (p.type === 'ring') {
+            ctx.strokeStyle = `rgba(239, 68, 68, ${p.alpha})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.stroke();
+          } else if (p.type === 'spark') {
+            ctx.fillStyle = `rgba(239, 68, 68, ${p.alpha})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (p.type === 'skid') {
+            ctx.fillStyle = `rgba(241, 245, 249, ${p.alpha * 0.45})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (p.type === 'dust') {
+            ctx.fillStyle = `rgba(148, 163, 184, ${p.alpha * 0.4})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        });
+      }
+
+      /* -------------------------------------------------------------
+         12. SCREEN RESIZING & LETTERBOXING
+         Scale canvas to viewport (letterbox, preserve aspect ratio, DPR <= 2)
+         ------------------------------------------------------------- */
+      let renderScaleX = 1;
+      let renderScaleY = 1;
+
+      function resizeCanvas() {
+        const wrapper = document.getElementById('game-wrapper');
+        const viewW = window.innerWidth;
+        const viewH = window.innerHeight;
+
+        const targetAspect = WORLD_WIDTH / WORLD_HEIGHT;
+        let dispW = viewW;
+        let dispH = dispW / targetAspect;
+
+        if (dispH > viewH) {
+          dispH = viewH;
+          dispW = dispH * targetAspect;
+        }
+
+        dispW = Math.floor(dispW);
+        dispH = Math.floor(dispH);
+
+        wrapper.style.width = `${dispW}px`;
+        wrapper.style.height = `${dispH}px`;
+
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        domCanvas.width = Math.floor(dispW * dpr);
+        domCanvas.height = Math.floor(dispH * dpr);
+
+        renderScaleX = domCanvas.width / WORLD_WIDTH;
+        renderScaleY = domCanvas.height / WORLD_HEIGHT;
+      }
+
+      window.addEventListener('resize', resizeCanvas);
+
+      /* -------------------------------------------------------------
+         13. PERSISTENT ANIMATION LOOP
+         One persistent requestAnimationFrame loop. Clamped dt <= 0.05s.
+         ------------------------------------------------------------- */
+      let lastFrameTime = 0;
+
+      function gameLoop(timestamp) {
+        requestAnimationFrame(gameLoop);
+
+        if (!lastFrameTime) {
+          lastFrameTime = timestamp;
+          return;
+        }
+
+        let dt = (timestamp - lastFrameTime) / 1000;
+        lastFrameTime = timestamp;
+
+        // Clamp dt to a max of 0.05s as specified
+        if (dt > 0.05) dt = 0.05;
+        if (dt < 0) dt = 0;
+
+        update(dt);
+        render();
+      }
+
+      // Initialize on load
+      window.addEventListener('DOMContentLoaded', () => {
+        resizeCanvas();
+        resetGame();
+        requestAnimationFrame(gameLoop);
+      });
+    })();
+  </script>
+</body>
+</html>
